@@ -1,0 +1,26 @@
+[package]
+name = "uniswap-curve"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stylus-sdk = { version = "0.6.0", default-features = false }
+alloy-primitives = { version = "=0.7.6", default-features = false }
+alloy-sol-types = { version = "=0.7.6", default-features = false }
+
+[dev-dependencies]
+motsu = "0.2.0"
+
+[features]
+export-abi = ["stylus-sdk/export-abi"]
+std = []
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+opt-level = "s"
