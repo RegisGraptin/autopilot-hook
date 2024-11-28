@@ -1,0 +1,18 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node api/index.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "brevis-sdk-typescript": "^1.3.1",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "web3": "^4.15.0"
+  }
+}
