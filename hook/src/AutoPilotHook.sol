@@ -9,10 +9,27 @@ import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 
+
+
+// Make sure to update the interface when Stylus Contract's Solidity ABI changes.
+interface IDynamicMLFee { // FIXME:
+    function getAmountInForExactOutput(uint256 amountOut, address input, address output, bool zeroForOne)
+        external
+        returns (uint256);
+
+    function getAmountOutFromExactInput(uint256 amountIn, address input, address output, bool zeroForOne)
+        external
+        returns (uint256);
+}
+
 contract AutoPilotHook is BaseHook {
     using LPFeeLibrary for uint24;
 
-    constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
+    IDynamicMLFee dynamicFee;
+
+    constructor(IPoolManager _poolManager, address stylusMLContract) BaseHook(_poolManager) {
+        dynamicFee = IDynamicMLFee(stylusMLContract);
+    }
 
     function getHookPermissions()
         public
