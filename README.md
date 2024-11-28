@@ -13,8 +13,32 @@ The main idea behind it is to increase the fees during high volatility to protec
 
 ## Data collection
 
+We defined volatility by the price impact, using the Moving Average Volatility. 
+We will use a rolling windows, to determine the price volatility.
+
+
+To reduce impermanent loss, we will focus on price movement.
+
+
+Computing moving average on chain can be costly, as we need it to update it for each windows block. 
+An alternative is to use Brevis, allowing us to compute long and short term moving average.
+
+In that case, we can use this data to predict price volatility.
+
+
+
+
+
 
 Regarding the data collection
+
+
+- Pool prize (reserveB / reserveA)
+- Liquidity reserveA, reserveB, totalLiquidity
+- Large swaps
+- price impact
+
+
 
 
 - Total liquidity (TVL - Total Value Locked).
