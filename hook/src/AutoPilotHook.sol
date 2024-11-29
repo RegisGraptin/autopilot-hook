@@ -9,7 +9,9 @@ import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {LPFeeLibrary} from "v4-core/libraries/LPFeeLibrary.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "v4-core/types/BeforeSwapDelta.sol";
 
+import {BrevisApp} from "@brevis-network/contracts/sdk/apps/framework/BrevisApp.sol";
 
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 // Make sure to update the interface when Stylus Contract's Solidity ABI changes.
 interface IDynamicMLFee { // FIXME:
@@ -22,13 +24,50 @@ interface IDynamicMLFee { // FIXME:
         returns (uint256);
 }
 
-contract AutoPilotHook is BaseHook {
+contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     using LPFeeLibrary for uint24;
 
-    IDynamicMLFee dynamicFee;
+    bytes32 public vkHash;
 
-    constructor(IPoolManager _poolManager, address stylusMLContract) BaseHook(_poolManager) {
-        dynamicFee = IDynamicMLFee(stylusMLContract);
+    IDynamicMLFee _dynamicFee;
+
+    constructor(IPoolManager _poolManager, address brevisRequest, address stylusMLContract) 
+        BaseHook(_poolManager)
+        BrevisApp(brevisRequest)
+        Ownable(msg.sender)
+    {
+        _dynamicFee = IDynamicMLFee(stylusMLContract);
+    }
+
+    // BrevisQuery contract will call our callback once Brevis backend submits the proof.
+    function handleProofResult(  // solhint-disable-line private-vars-leading-underscore
+        bytes32 _vkHash,
+        bytes calldata _circuitOutput
+    ) internal override {
+        require(vkHash == _vkHash, "invalid vk");
+
+        // FIXME:
+        (uint64 _minBlockNum, uint248 _sum) = _decodeOutput(_circuitOutput);
+        
+        // other logic that uses the proven data...
+        _minBlockNum;
+        _sum;
+    }
+
+    // Suppose in the app circuit you have:
+    // api.OutputUint(64, minBlockNum)
+    // api.OutputUint(248, sum)
+    // Then, we can decode the output the following way
+    function _decodeOutput(
+        bytes calldata output
+    ) internal pure returns (uint64, uint248) {
+        uint64 minBlockNum = uint64(bytes8(output[0:8])); 
+        uint248 sum = uint248(bytes31(output[8:8+31])); 
+        return (minBlockNum, sum);
+    }
+
+    function setVkHash(bytes32 _vkHash) external onlyOwner {
+        vkHash = _vkHash;
     }
 
     function getHookPermissions()
