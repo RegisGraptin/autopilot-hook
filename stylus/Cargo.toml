@@ -7,6 +7,8 @@ edition = "2021"
 stylus-sdk = { version = "0.6.0", default-features = false }
 alloy-primitives = { version = "=0.7.6", default-features = false }
 alloy-sol-types = { version = "=0.7.6", default-features = false }
+mini-alloc = "0.4.2"
+hex = "0.4.3"
 
 [dev-dependencies]
 motsu = "0.2.0"

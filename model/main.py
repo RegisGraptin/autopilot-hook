@@ -71,6 +71,36 @@ def create_training_data(df, column="rolling_std"):
 
     return X, y
 
+
+def parse_model_to_stylus(model):
+
+    fn_data = """
+    fn compute_forcast_volatility(
+        &self,
+        new_volatility: U256,
+    ) -> Result<U256, Error> {\n"""
+
+    fn_data += "\tlet coefficient: Vec<I256> = vec![\n"
+
+    for i, coef in enumerate(model.coef_):
+        # fn_data += f'\tlet BETA_{i}: I256 = "{int(coef * 10_000_000)}".parse::<I256>().unwrap();\n'
+        fn_data += f'\t\t"{int(coef * 10_000_000)}".parse::<I256>().unwrap(),\n'
+
+
+    fn_data += "\t];\n"
+
+
+    print(fn_data)
+
+        # 
+
+    
+
+        # Ok(new_volatility)
+    # }
+
+
+
 if __name__ == "__main__":
     if not os.path.exists("data.csv"):
         prepare_data_set()
@@ -129,4 +159,6 @@ if __name__ == "__main__":
     print(model.get_params())
     print(model.coef_)
 
+
+    parse_model_to_stylus(model)    
 

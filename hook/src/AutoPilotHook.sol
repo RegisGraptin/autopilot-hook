@@ -108,6 +108,14 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     {
         // FIXME: Dynamic fee
 
+        // Volatility State
+
+        // Forcast volatility
+
+        // Apply dynamic fee
+
+        
+
         // uint24 fee = getFee();
         // poolManager.updateDynamicLPFee(key, fee);
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);

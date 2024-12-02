@@ -51,6 +51,31 @@ Regarding the data collection
 
 
 
+## Approach
+
+We start with 1 hour time windows ~240 blocks on ethereum
+
+
+
+
+Window Size={ 
+Small (e.g., 60 blocks)
+Large (e.g., 240 blocks)
+)​
+  
+if Volume > Threshold
+if Volume < Threshold
+​
+ 
+
+> Brevis: compute variance and store it on chain based on the block space we want!
+
+
+
+future approach dynamic time windows
+
+
+
 ## Sponsors
 
 - Uniswap: Target dynamic fees based on volatility
