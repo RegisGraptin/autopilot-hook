@@ -17,17 +17,6 @@ use stylus_sdk::storage::{StorageArray, StorageU256};
 /// The currency data type.
 pub type Currency = Address;
 
-// sol! {
-//     // Example event
-//     #[allow(missing_docs)]
-//     event AmountInCalculated(
-//         uint256 amount_out,
-//         address input,
-//         address output,
-//         bool zero_for_one
-//     );
-// }
-
 sol! {
     /// Indicates a custom error.
     #[derive(Debug)]
@@ -41,19 +30,18 @@ pub enum Error {
     CustomError(CurveCustomError),
 }
 
-// sol_storage! {
-//     #[entrypoint]
-//     struct UniswapCurve {
-//         volatility_history: StorageVec<I256>
-//     }
-// }
-
 sol_storage! {
     #[entrypoint]
     struct UniswapCurve {
+        // Store the previous volatility points
         StorageArray<StorageU256, 20> volatility_history;
+        
+        // Keep track of the first item of our sequence
+        // Or the item to override to add a new one into our list
         StorageU256 index;
-        StorageU256 n_data;
+        
+        // Count the number of items, usefull for initialization
+        StorageU256 n_items;
     }
 }
 
@@ -89,39 +77,32 @@ pub trait ICurve {
 #[public]
 impl ICurve for UniswapCurve {
 
-
     fn forcast_volatility(
         &mut self,
         new_volatility: U256,
     ) -> Result<U256, Error> {
-
+        // At the first 20 volatility points, we return the imput data, as it is impossible for our model
+        // to forcast the next point. 
+        // When the first 20 data points are stored, we add at the index our new data, by override it as
+        // we do not have pop(0) in solidity, so we are using the index mod 20 to keep track of our item.
+        // Once store, we are using our trained model to forcast the data.
 
         // For the first 20 data, we cannot forcast volatility yet
-        // So we are returning the current volatility
-        let current_n_data = self.n_data.get();
-
-        if current_n_data < "20".parse::<U256>().unwrap() {
-            let mut index = self.volatility_history.get_mut(current_n_data).unwrap();
+        if self.n_items.lt(&U256::from(20)) {
+            let mut index = self.volatility_history.get_mut(U256::from(*self.n_items)).unwrap();
             index.set(new_volatility);
 
-            let new_n_data = current_n_data + "1".parse::<U256>().unwrap();
-            self.n_data.set(new_n_data);
-
+            self.n_items.set(self.n_items.get() + U256::from(1));
             return Ok(new_volatility);
         }
 
-        // // We have 20 items in our array
-        // // We need to remove the first one and add the new one to the end
-        // let d = self.volatility_history.load_mut();
-
-        // New item will be store on the first one
-
+        // We have at least 20 items, we can now forcast the volatility
+        // We first store our new data
         let mut data = self.volatility_history.get_mut(self.index.get()).unwrap();
         data.set(new_volatility);
 
         let next_index = self.index.add_mod("1".parse::<U256>().unwrap(), "20".parse::<U256>().unwrap());
         self.index.set(next_index);
-
 
         // Forcast the volatility based on our trained ML model
         let volatility = self.compute_forcast_volatility()?;
@@ -137,8 +118,10 @@ impl UniswapCurve {
         &self,
     ) -> Result<U256, Error> {
 
+        // Get the first item of our sequence
         let mut index = self.index.get();
 
+        // To avoid floating numbers, we have scale the coefficient values
         let coefficient: Vec<I256> = vec![
             "-146693".parse::<I256>().unwrap(),
             "5476".parse::<I256>().unwrap(),
@@ -164,21 +147,22 @@ impl UniswapCurve {
         
         let mut prediction = "0".parse::<I256>().unwrap();
 
-        for i in 0..19 {
-
-            // Compute the new index
-            index = index.add_mod(U256::from(i) , U256::from(20));
-            
+        for i in 0..20 {
             // Extract the value 
             let val = self.volatility_history.get(index).unwrap().to_string().parse::<I256>().unwrap();
-
             let coef = coefficient.get(i).unwrap();
-            
             prediction = prediction + *coef * val;
+            
+            // Compute the new index
+            index = index.add_mod(U256::from(1), U256::from(20));
         }
+
+        // Rescale our prediction
+        prediction = prediction / "10_000_000".parse::<I256>().unwrap();
 
         if prediction.le(&"0".parse::<I256>().unwrap()) {
             // Error in prediction, we cannot have a negative volatility
+            return Err(Error::CustomError(CurveCustomError {}));
         }
 
         let forcast = prediction.abs().to_string().parse::<U256>().unwrap();
@@ -187,57 +171,50 @@ impl UniswapCurve {
     }
 }
 
-// /// Unit tests
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use alloy_primitives::{address, uint};
+/// Unit tests
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     const CURRENCY_1: Address = address!("A11CEacF9aa32246d767FCCD72e02d6bCbcC375d");
-//     const CURRENCY_2: Address = address!("B0B0cB49ec2e96DF5F5fFB081acaE66A2cBBc2e2");
+    #[motsu::test]
+    fn forcast_volatility(contract: UniswapCurve) {
 
-//     #[test]
-//     fn sample_test() {
-//         assert_eq!(4, 2 + 2);
-//     }
+        let x_points: Vec<U256> = vec![
+            "1660".parse::<U256>().unwrap(),
+            "1673".parse::<U256>().unwrap(),
+            "1681".parse::<U256>().unwrap(),
+            "1721".parse::<U256>().unwrap(),
+            "1626".parse::<U256>().unwrap(),
+            "1574".parse::<U256>().unwrap(),
+            "1587".parse::<U256>().unwrap(),
+            "1550".parse::<U256>().unwrap(),
+            "1566".parse::<U256>().unwrap(),
+            "936".parse::<U256>().unwrap(),
+            "857".parse::<U256>().unwrap(),
+            "855".parse::<U256>().unwrap(),
+            "1078".parse::<U256>().unwrap(),
+            "1062".parse::<U256>().unwrap(),
+            "1077".parse::<U256>().unwrap(),
+            "1096".parse::<U256>().unwrap(),
+            "1119".parse::<U256>().unwrap(),
+            "1114".parse::<U256>().unwrap(),
+            "1428".parse::<U256>().unwrap(),
+            "1454".parse::<U256>().unwrap(),
+        ];
 
-//     #[motsu::test]
-//     fn calculates_amount_in(contract: UniswapCurve) {
-//         let amount_out = uint!(1_U256);
-//         let expected_amount_in = amount_out; // 1:1 swap
-//         let amount_in = contract
-//             .calculate_amount_in(amount_out, CURRENCY_1, CURRENCY_2, true)
-//             .expect("should calculate `amount_in`");
-//         assert_eq!(expected_amount_in, amount_in);
-//     }
+        // Check the initialization
+        for i in 0..20 {
+            let volatility = contract
+                .forcast_volatility(*x_points.get(i).unwrap())
+                .expect("should compute `volatility`");
+            assert_eq!(*x_points.get(i).unwrap(), volatility);
+        }
 
-//     #[motsu::test]
-//     fn calculates_amount_out(contract: UniswapCurve) {
-//         let amount_in = uint!(2_U256);
-//         let expected_amount_out = amount_in; // 1:1 swap
-//         let amount_out = contract
-//             .calculate_amount_out(amount_in, CURRENCY_1, CURRENCY_2, true)
-//             .expect("should calculate `amount_out`");
-//         assert_eq!(expected_amount_out, amount_out);
-//     }
+        // Check model predicition
+        let volatility = contract
+                .forcast_volatility("1570".parse::<U256>().unwrap())
+                .expect("should compute `volatility`");
+        assert_eq!("1496".parse::<U256>().unwrap(), volatility);
 
-//     #[motsu::test]
-//     fn returns_amount_in_for_exact_output(contract: UniswapCurve) {
-//         let amount_out = uint!(1_U256);
-//         let expected_amount_in = amount_out; // 1:1 swap
-//         let amount_in = contract
-//             .get_amount_in_for_exact_output(amount_out, CURRENCY_1, CURRENCY_2, true)
-//             .expect("should calculate `amount_in`");
-//         assert_eq!(expected_amount_in, amount_in);
-//     }
-
-//     #[motsu::test]
-//     fn returns_amount_out_from_exact_input(contract: UniswapCurve) {
-//         let amount_in = uint!(2_U256);
-//         let expected_amount_out = amount_in; // 1:1 swap
-//         let amount_out = contract
-//             .get_amount_out_from_exact_input(amount_in, CURRENCY_1, CURRENCY_2, true)
-//             .expect("should calculate `amount_out`");
-//         assert_eq!(expected_amount_out, amount_out);
-//     }
-// }
+    }
+}
