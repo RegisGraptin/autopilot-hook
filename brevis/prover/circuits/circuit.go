@@ -1,7 +1,10 @@
 package circuits
 
 import (
+	"fmt"
+
 	"github.com/brevis-network/brevis-sdk/sdk"
+	"github.com/consensys/gnark/frontend"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 )
@@ -12,6 +15,50 @@ type AppCircuit struct {
 }
 
 var _ sdk.AppCircuit = &AppCircuit{}
+
+// Define a custom accumulator struct
+type TickAccumulator struct {
+	PreviousTick sdk.Uint248 // Store the previous tick value
+	Sum          sdk.Uint248 // Sum of tick variations
+	Count        sdk.Uint248 // Count of tick variations
+	SumOfSquares sdk.Uint248 // Sum of squared differences for standard deviation
+}
+
+func (acc TickAccumulator) FromValues(values ...frontend.Variable) sdk.CircuitVariable {
+	if len(values) != 4 {
+		// In case of an error, you might want to return an empty accumulator or handle it differently
+		panic(fmt.Sprintf("expected 4 values, got %d", len(values))) // Or use error handling as per your design
+	}
+
+	acc.PreviousTick = values[0].(sdk.Uint248)
+	acc.Sum = values[1].(sdk.Uint248)
+	acc.Count = values[2].(sdk.Uint248)
+	acc.SumOfSquares = values[3].(sdk.Uint248)
+
+	return nil
+}
+
+// Implement the NumVars method to satisfy sdk.CircuitVariable
+func (acc TickAccumulator) NumVars() uint32 {
+	return 4 // The number of variables in the TickAccumulator (PreviousTick, Sum, Count, SumOfSquares)
+}
+
+// Implement the String method to satisfy sdk.CircuitVariable
+func (acc TickAccumulator) String() string {
+	return fmt.Sprintf("TickAccumulator{PreviousTick: %s, Sum: %s, Count: %s, SumOfSquares: %s}",
+		acc.PreviousTick.String(), acc.Sum.String(), acc.Count.String(), acc.SumOfSquares.String())
+}
+
+// Implement the Values method to satisfy sdk.CircuitVariable
+func (acc TickAccumulator) Values() []frontend.Variable {
+	// Return a slice of frontend.Variable containing the values from the TickAccumulator fields
+	return []frontend.Variable{
+		acc.PreviousTick, // PreviousTick as a frontend.Variable
+		acc.Sum,          // Sum as a frontend.Variable
+		acc.Count,        // Count as a frontend.Variable
+		acc.SumOfSquares, // SumOfSquares as a frontend.Variable
+	}
+}
 
 // /// @notice Emitted for swaps between currency0 and currency1
 // /// @param id The abi encoded hash of the pool key struct for the pool that was modified
@@ -75,27 +122,78 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, in sdk.DataInput) error {
 		return assertionPassed
 	})
 
-	tickVariation := sdk.Map(receipts, func(cur sdk.Receipt) sdk.Uint248 {
-		return api.ToUint248(cur.Fields[6].Value)
+	tickValues := sdk.Map(receipts, func(cur sdk.Receipt) sdk.Uint248 {
+		return api.ToUint248(cur.Fields[3].Value)
 	})
 
-	blockNums := sdk.Map(receipts, func(cur sdk.Receipt) sdk.Uint248 { return api.ToUint248(cur.BlockNum) })
+	// tickVariationMean := sdk.Mean(tickVariation)
 
-	existing := sdk.Map(receipts, func(cur sdk.Receipt) sdk.Uint248 {
-		return api.ToUint248(sdk.ConstUint64(1))
+	// Compute the std
+	// sdk.Map(tickVariation, )
+
+	// First pass: Compute the sum and count of tick variations
+	tickStats := sdk.Reduce(tickValues, TickAccumulator{
+		Sum:          sdk.Uint248{Val: 0},
+		Count:        sdk.Uint248{Val: 0},
+		PreviousTick: sdk.Uint248{Val: 0},
+		SumOfSquares: sdk.Uint248{Val: 0}, // Used in the second pass
+	}, func(acc TickAccumulator, curr sdk.Uint248) TickAccumulator {
+
+		// We are skiping the first item
+		hasCountValue := api.Uint248.IsGreaterThan(acc.Count, sdk.Uint248{Val: 0}) == sdk.Uint248{Val: 0}
+		if hasCountValue {
+
+			// Calculate the tick variation as the difference between current and previous tick
+			// We are only interested in the abs value
+			val := api.Uint248.Mul(curr, sdk.Uint248{Val: 10_000_000})
+			tickVariation, _ := api.Uint248.Div(val, acc.PreviousTick)
+
+			// Update the accumulator: sum and count
+			acc.Sum = api.Uint248.Add(acc.Sum, tickVariation)
+			acc.Count = api.Uint248.Add(acc.Count, sdk.Uint248{Val: 1})
+		}
+
+		acc.PreviousTick = curr
+
+		return acc
 	})
 
-	// Find out the minimum block number. This enables us to find out over what range
-	// the user has a specific trading volume
-	minBlockNum := sdk.Min(blockNums)
+	// Compute the mean (sum / count)
+	mean, _ := api.Uint248.Div(tickStats.Sum, tickStats.Count)
 
-	sdk.Mean()
+	// Second pass: Compute the sum of squared differences from the mean
+	sumOfSquaredDifferences := sdk.Reduce(tickValues, TickAccumulator{
+		SumOfSquares: sdk.Uint248{Val: 0},
+		Count:        sdk.Uint248{Val: 0},
+		PreviousTick: sdk.Uint248{Val: 0},
+	}, func(acc TickAccumulator, curr sdk.Uint248) TickAccumulator {
 
-	// Sum up the volume of each trade
-	sumNumberOfEvents := sdk.Sum(existing)
+		// We are skiping the first item
+		hasCountValue := api.Uint248.IsGreaterThan(acc.Count, sdk.Uint248{Val: 0}) == sdk.Uint248{Val: 0}
+		if hasCountValue {
 
-	api.OutputUint(248, sumNumberOfEvents)
-	api.OutputUint(64, minBlockNum)
+			// Calculate the tick variation as the difference between current and previous tick
+			// We are only interested in the abs value
+			val := api.Uint248.Mul(curr, sdk.Uint248{Val: 10_000_000})
+			tickVariation, _ := api.Uint248.Div(val, acc.PreviousTick)
+
+			squaredDifference := api.Uint248.Mul(api.Uint248.Sub(tickVariation, mean), api.Uint248.Sub(tickVariation, mean))
+			acc.SumOfSquares = api.Uint248.Add(acc.SumOfSquares, squaredDifference)
+
+			acc.PreviousTick = curr
+			acc.Count = api.Uint248.Add(acc.Count, sdk.Uint248{Val: 1})
+
+		}
+
+		return acc
+	})
+
+	// Compute the standard deviation (sqrt(sumOfSquares / count))
+	v, _ := api.Uint248.Div(sumOfSquaredDifferences.SumOfSquares, tickStats.Count)
+	std := api.Uint248.Sqrt(v)
+
+	// Output the standard deviation
+	api.OutputUint(248, std)
 
 	return nil
 }
