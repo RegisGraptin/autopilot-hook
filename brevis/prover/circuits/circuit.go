@@ -122,14 +122,12 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, in sdk.DataInput) error {
 		return assertionPassed
 	})
 
+	// Get only the tick values
 	tickValues := sdk.Map(receipts, func(cur sdk.Receipt) sdk.Uint248 {
 		return api.ToUint248(cur.Fields[3].Value)
 	})
 
-	// tickVariationMean := sdk.Mean(tickVariation)
-
-	// Compute the std
-	// sdk.Map(tickVariation, )
+	//// Now compute the std from the tick variation
 
 	// First pass: Compute the sum and count of tick variations
 	tickStats := sdk.Reduce(tickValues, TickAccumulator{
@@ -144,7 +142,7 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, in sdk.DataInput) error {
 		if hasCountValue {
 
 			// Calculate the tick variation as the difference between current and previous tick
-			// We are only interested in the abs value
+			// Do not forget to scale it for our ML model
 			val := api.Uint248.Mul(curr, sdk.Uint248{Val: 10_000_000})
 			tickVariation, _ := api.Uint248.Div(val, acc.PreviousTick)
 
@@ -172,8 +170,7 @@ func (c *AppCircuit) Define(api *sdk.CircuitAPI, in sdk.DataInput) error {
 		hasCountValue := api.Uint248.IsGreaterThan(acc.Count, sdk.Uint248{Val: 0}) == sdk.Uint248{Val: 0}
 		if hasCountValue {
 
-			// Calculate the tick variation as the difference between current and previous tick
-			// We are only interested in the abs value
+			// Again compute tick variation
 			val := api.Uint248.Mul(curr, sdk.Uint248{Val: 10_000_000})
 			tickVariation, _ := api.Uint248.Div(val, acc.PreviousTick)
 
