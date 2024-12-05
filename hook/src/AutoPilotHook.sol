@@ -27,8 +27,8 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
 
     uint256 constant public NEXT_BLOCK_THRESHOLD = 900;
     
-    uint256 constant public BASE_FEE = 3000;
-    uint256 constant public HIGH_VOLATILITY_FEE = 6000;
+    uint256 constant public BASE_FEE = 3000;    // 0.3%
+    uint256 constant public HIGH_VOLATILITY_FEE = 6000;  // 0.6%
 
     bytes32 public vkHash;
 
