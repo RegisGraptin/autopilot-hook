@@ -13,22 +13,22 @@ import {BrevisApp} from "@brevis-network/contracts/sdk/apps/framework/BrevisApp.
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-
 // Make sure to update the interface when Stylus Contract's Solidity ABI changes.
 interface IUniswapCurve {
-    function forcastVolatility(uint256 new_volatility) external returns (uint256);
+    function forcastVolatility(
+        uint256 new_volatility
+    ) external returns (uint256);
 
     error CurveCustomError();
 }
 
-
 contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     using LPFeeLibrary for uint24;
 
-    uint256 constant public NEXT_BLOCK_THRESHOLD = 900;
-    
-    uint256 constant public BASE_FEE = 3000;    // 0.3%
-    uint256 constant public HIGH_VOLATILITY_FEE = 6000;  // 0.6%
+    uint256 public constant NEXT_BLOCK_THRESHOLD = 900;
+
+    uint256 public constant BASE_FEE = 3000; // 0.3%
+    uint256 public constant HIGH_VOLATILITY_FEE = 6000; // 0.6%
 
     bytes32 public vkHash;
 
@@ -40,21 +40,25 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
 
     error MustUseDynamicFee();
 
-    constructor(IPoolManager _poolManager, address brevisRequest, address stylusMLContract) 
-        BaseHook(_poolManager)
-        BrevisApp(brevisRequest)
-        Ownable(msg.sender)
-    {
+    constructor(
+        IPoolManager _poolManager,
+        address brevisRequest,
+        address stylusMLContract
+    ) BaseHook(_poolManager) BrevisApp(brevisRequest) Ownable(msg.sender) {
         _dynamicFee = IUniswapCurve(stylusMLContract);
     }
 
     // BrevisQuery contract will call our callback once Brevis backend submits the proof.
-    function handleProofResult(  // solhint-disable-line private-vars-leading-underscore
+    function handleProofResult(
+        // solhint-disable-line private-vars-leading-underscore
         bytes32 _vkHash,
         bytes calldata _circuitOutput
     ) internal override {
         require(vkHash == _vkHash, "invalid vk");
-        require(block.timestamp > lastBlock + NEXT_BLOCK_THRESHOLD, "invalid threshold time");
+        require(
+            block.timestamp > lastBlock + NEXT_BLOCK_THRESHOLD,
+            "invalid threshold time"
+        );
 
         // Extract the volatility
         lastVolatility = _decodeOutput(_circuitOutput);
@@ -69,7 +73,7 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     function _decodeOutput(
         bytes calldata output
     ) internal pure returns (uint256) {
-        uint256 volatility = uint256(bytes31(output[0:31])); 
+        uint256 volatility = uint256(bytes31(output[0:31]));
         return volatility;
     }
 
@@ -108,7 +112,7 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
         uint160
     ) external pure override returns (bytes4) {
         // Check that the attached pool has dynamic fee
-        if(!key.fee.isDynamicFee()) revert MustUseDynamicFee();
+        if (!key.fee.isDynamicFee()) revert MustUseDynamicFee();
         return this.beforeInitialize.selector;
     }
 
@@ -123,7 +127,6 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
         onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-
         uint24 fee = BASE_FEE;
 
         // Depending of the volatility, apply different fees
@@ -135,5 +138,4 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
         poolManager.updateDynamicLPFee(key, fee);
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
-
 }
