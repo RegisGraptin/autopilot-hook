@@ -9,23 +9,21 @@ const SERVER_RPC = process.env.SERVER_RPC;
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS;
 
 
+const BREVIS_KEY = process.env.BREVIS_KEY;
+const BREVIS_CALLBACK_ADDRESS = process.env.BREVIS_CALLBACK_ADDRESS;
+
 const prover = new brevis.Prover('localhost:33247');
 const BrevisNetwork = new brevis.Brevis('appsdkv3.brevis.network:443');
 
 const proofReq = new brevis.ProofRequest();
 
 
-
 const app = express();
 const port = 3010;
 
-app.get('/', (req, res) => {
-  res.send('Welcome to my server!');
-});
-
-
-
-app.get("/compute", async (request, response) => {
+app.get('/', async (request, response) => {
+  
+  console.log("Create ZK proof using Brevis")
 
   try {
       let provider = new ethers.JsonRpcProvider(SERVER_RPC, );
@@ -33,10 +31,14 @@ app.get("/compute", async (request, response) => {
 
       const currentBlock = await provider.getBlockNumber();
 
+      // Block on ethereum ~ 15 seconds 
+      // We want to measure volatility on 15 minutes
+      // ~ 900 blocks (15 * 60)
+
       let rawLogs = await provider.getLogs({
           address: CONTRACT_ADDRESS,
           topics: [],
-          fromBlock: currentBlock - 10000, 
+          fromBlock: currentBlock - 900, 
           toBlock: currentBlock
       });
 
@@ -47,20 +49,29 @@ app.get("/compute", async (request, response) => {
         console.log(element);
       
         // Add the proof
-        // FIXME:
         proofReq.addReceipt(
             new brevis.ReceiptData({
                 tx_hash: element.transactionHash,
                 fields: [
-                    new brevis.Field({
+                    new brevis.Field({  // Event id
                         log_pos: 0,
                         is_topic: true,
                         field_index: 0,
                     }),
-                    new brevis.Field({
+                    new brevis.Field({  // Pool id
                         log_pos: 0,
                         is_topic: true,
                         field_index: 1,
+                    }),
+                    new brevis.Field({  // Uniswap Pool Address
+                      log_pos: 0,
+                      is_topic: true,
+                      field_index: 2,
+                    }),
+                    new brevis.Field({  // Tick value
+                      log_pos: 0,
+                      is_topic: true,
+                      field_index: 7,
                     }),
                 ],
             }),
@@ -73,8 +84,6 @@ app.get("/compute", async (request, response) => {
 
       console.log('proof', proofRes.proof);
 
-      // console.log(proofRes);
-
       try {
         const brevisRes = await BrevisNetwork.submit(
           proofReq, 
@@ -82,11 +91,9 @@ app.get("/compute", async (request, response) => {
           11155111, 
           11155111, 
           0, 
-          "", 
-          "" 
+          BREVIS_KEY, 
+          BREVIS_CALLBACK_ADDRESS
         ); 
-
-        console.log('brevis res', brevisRes);
 
         await BrevisNetwork.wait(brevisRes.queryKey, 11155111);
     } catch (err) {
