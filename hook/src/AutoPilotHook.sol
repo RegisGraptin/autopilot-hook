@@ -13,30 +13,39 @@ import {BrevisApp} from "@brevis-network/contracts/sdk/apps/framework/BrevisApp.
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
-// Make sure to update the interface when Stylus Contract's Solidity ABI changes.
-interface IDynamicMLFee { // FIXME:
-    function getAmountInForExactOutput(uint256 amountOut, address input, address output, bool zeroForOne)
-        external
-        returns (uint256);
 
-    function getAmountOutFromExactInput(uint256 amountIn, address input, address output, bool zeroForOne)
-        external
-        returns (uint256);
+// Make sure to update the interface when Stylus Contract's Solidity ABI changes.
+interface IUniswapCurve {
+    function forcastVolatility(uint256 new_volatility) external returns (uint256);
+
+    error CurveCustomError();
 }
+
 
 contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     using LPFeeLibrary for uint24;
 
+    uint256 constant public NEXT_BLOCK_THRESHOLD = 900;
+    
+    uint256 constant public BASE_FEE = 3000;
+    uint256 constant public HIGH_VOLATILITY_FEE = 6000;
+
     bytes32 public vkHash;
 
-    IDynamicMLFee _dynamicFee;
+    IUniswapCurve _dynamicFee;
+
+    uint256 lastVolatility;
+    uint256 lastBlock;
+    uint256 forcastVolatility;
+
+    error MustUseDynamicFee();
 
     constructor(IPoolManager _poolManager, address brevisRequest, address stylusMLContract) 
         BaseHook(_poolManager)
         BrevisApp(brevisRequest)
         Ownable(msg.sender)
     {
-        _dynamicFee = IDynamicMLFee(stylusMLContract);
+        _dynamicFee = IUniswapCurve(stylusMLContract);
     }
 
     // BrevisQuery contract will call our callback once Brevis backend submits the proof.
@@ -45,25 +54,23 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
         bytes calldata _circuitOutput
     ) internal override {
         require(vkHash == _vkHash, "invalid vk");
+        require(block.timestamp > lastBlock + NEXT_BLOCK_THRESHOLD, "invalid threshold time");
 
-        // FIXME:
-        (uint64 _minBlockNum, uint248 _sum) = _decodeOutput(_circuitOutput);
-        
-        // other logic that uses the proven data...
-        _minBlockNum;
-        _sum;
+        // Extract the volatility
+        lastVolatility = _decodeOutput(_circuitOutput);
+        lastBlock = block.timestamp;
+
+        // Compute the forcast volatility
+        forcastVolatility = _dynamicFee.forcastVolatility(lastVolatility);
     }
 
-    // Suppose in the app circuit you have:
-    // api.OutputUint(64, minBlockNum)
-    // api.OutputUint(248, sum)
-    // Then, we can decode the output the following way
+    // Decode the following input
+    // api.OutputUint(248, std)
     function _decodeOutput(
         bytes calldata output
-    ) internal pure returns (uint64, uint248) {
-        uint64 minBlockNum = uint64(bytes8(output[0:8])); 
-        uint248 sum = uint248(bytes31(output[8:8+31])); 
-        return (minBlockNum, sum);
+    ) internal pure returns (uint256) {
+        uint256 volatility = uint256(bytes31(output[0:31])); 
+        return volatility;
     }
 
     function setVkHash(bytes32 _vkHash) external onlyOwner {
@@ -78,7 +85,7 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     {
         return
             Hooks.Permissions({
-                beforeInitialize: false,
+                beforeInitialize: true,
                 afterInitialize: false,
                 beforeAddLiquidity: false,
                 beforeRemoveLiquidity: false,
@@ -95,6 +102,16 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
             });
     }
 
+    function beforeInitialize(
+        address,
+        PoolKey calldata key,
+        uint160
+    ) external pure override returns (bytes4) {
+        // Check that the attached pool has dynamic fee
+        if(!key.fee.isDynamicFee()) revert MustUseDynamicFee();
+        return this.beforeInitialize.selector;
+    }
+
     function beforeSwap(
         address,
         PoolKey calldata key,
@@ -106,18 +123,16 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
         onlyPoolManager
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // FIXME: Dynamic fee
 
-        // Volatility State
+        uint24 fee = BASE_FEE;
 
-        // Forcast volatility
+        // Depending of the volatility, apply different fees
+        if (forcastVolatility > 5000) {
+            // For improvement, we can use the magnitude of the forcast to determine the price of the fee
+            fee = HIGH_VOLATILITY_FEE;
+        }
 
-        // Apply dynamic fee
-
-        
-
-        // uint24 fee = getFee();
-        // poolManager.updateDynamicLPFee(key, fee);
+        poolManager.updateDynamicLPFee(key, fee);
         return (this.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
     }
 
