@@ -2,6 +2,12 @@
 # Autopilot Hook: ML-Driven Volatility Management for Uniswap V4
 > Developed as part of the Uniswap Hook Incubator, powered by Atrium.
 
+
+<div align="center">
+    <img src="logo.jpeg" alt="Logo" width="320" height="320" />
+</div>
+
+
 **Autopilot Hook** is a Uniswap V4 hook designed to dynamically adjust fees based on market volatility using Machine Learning. By forecasting periods of high volatility, the system helps protect liquidity providers from impermanent loss. During low volatility, it lowers fees to incentivize trading activity.
 
 ## Our Approach
