@@ -27,8 +27,8 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
 
     uint256 public constant NEXT_BLOCK_THRESHOLD = 900;
 
-    uint256 public constant BASE_FEE = 3000; // 0.3%
-    uint256 public constant HIGH_VOLATILITY_FEE = 6000; // 0.6%
+    uint24 public constant BASE_FEE = 3000; // 0.3%
+    uint24 public constant HIGH_VOLATILITY_FEE = 6000; // 0.6%
 
     bytes32 public vkHash;
 
@@ -73,7 +73,7 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     function _decodeOutput(
         bytes calldata output
     ) internal pure returns (uint256) {
-        uint256 volatility = uint256(bytes31(output[0:31]));
+        uint256 volatility = uint256(bytes32(output[0:31]));
         return volatility;
     }
 
@@ -129,8 +129,8 @@ contract AutoPilotHook is BaseHook, BrevisApp, Ownable {
     {
         uint24 fee = BASE_FEE;
 
-        // Depending of the volatility, apply different fees
-        if (forcastVolatility > 5000) {
+        // If we are in a period of high volatility or if we forcast future high volatility
+        if (lastVolatility > 5000 || forcastVolatility > 5000) {
             // For improvement, we can use the magnitude of the forcast to determine the price of the fee
             fee = HIGH_VOLATILITY_FEE;
         }
