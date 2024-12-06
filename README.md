@@ -1,54 +1,73 @@
 
-# Autopilot Hook
-> Built during the Uniswap Hook Incubator by Atrium
+# Autopilot Hook: ML-Driven Volatility Management for Uniswap V4
+> Developed as part of the Uniswap Hook Incubator, powered by Atrium.
 
-We develop **Autopilot Hook** a Uniswap hook design to dynamically adjust fees based on market volatility using a Machine Learning approach. 
-
-In case of a forcast **high volatlity**, we want to be able to protect the liquidity providers and mitigate impermanent loss, while lowering fees during low volatility to encourage trading.
+**Autopilot Hook** is a Uniswap V4 hook designed to dynamically adjust fees based on market volatility using Machine Learning. By forecasting periods of high volatility, the system helps protect liquidity providers from impermanent loss. During low volatility, it lowers fees to incentivize trading activity.
 
 ## Our Approach
 
-To be able to forcast data volatility, we have decided to based our approach on price volatility. To do that, we are first defining a window period, that is going to be used to measure ou volatility. Then, on this period, we can compute the the absolute tick difference. Finally, based on this difference, we are computing the standard deviation of the given periode. 
+To forecast data volatility, we base our approach on price volatility. First, we define a window period used to measure volatility. Within this period, we calculate the absolute tick difference, which represents the price variation. Using these differences, we compute the standard deviation, a statistical measure of volatility for the given period.
 
-For our study, we have decided to study a tick variation on each 15 minutes. And our window, will be compose of 20 ticks, meaning a window of 5 hours. Notice, that those parameter can be changed and will impact the market. Depending of the assets choosen, some more volatile than other, it could be wise to adjust and study the impact.
+For this study, we use price data sampled at 15-minute intervals, with a window composed of 20 ticks (equivalent to 5 hours). These parameters are adjustable and can significantly influence the results. For more volatile assets, it may be beneficial to refine these settings and analyze their impact further.
 
-## Technologies
+## Key Technologies
 
-To implement this use case, we are leveraging **Uniswap V4** to be able to adapt/adjust the dynamic fee. As you may notice, to be able to use and compute the standard deviation, as it could be gas consuming of doing it on chain, we are leveraging **Brevis** a ZK-Coprossesor allowing us to compute the tick variation off-chain and feed it on-chain by having a proof allowing us to trust the computation. Finally, for our machine learning model, as the computation for the forcast can be complex, we are using **Arbitrum Stylus** allowing us to unlock Machine Learning process directly on-chain, by optimizing computation.
+To implement this use case, we leverage the following technologies:
+
+- **Uniswap V4**: Enables dynamic fee adjustments for liquidity providers by allowing hooks to modify the protocol’s behavior.
+- **Brevis** (ZK Coprocessor): Computing the standard deviation on-chain can be gas-intensive. Instead, Brevis allows us to **process tick variations off-chain** securely and submit verified results on-chain using zero-knowledge proofs, ensuring trust in the computation.
+- **Arbitrum Stylus**: Machine learning computations, such as forecasting volatility, are resource-intensive. Arbitrum Stylus **unlocks on-chain machine learning** capabilities by optimizing complex computations.
 
 
-# Implementation
+
+
+
+# Implementation: Building our Autopilot hook
 
 ## Data collection
 
-Our research focuses on the **ETH/USD price data** from **November 2023** to **November 2024**, sampled at **15-minute intervals**.
-This dataset provides a granular view of price fluctuations, which will serve as the foundation for our volatility prediction model.
+Our research focuses on the **ETH/USD price data** collected from **November 2023** to **November 2024**, sampled at **15-minute intervals**. The dataset provides a granular view of price fluctuations, forming the foundation of our volatility prediction model.
 
-Our approach uses historical price data to predict price volatility. For that, we are reling on the last **20 data points** (15-minute intervals) to capture short-term market behavior.
+To forecast volatility, we rely on the **last 20 data points** (spanning 5 hours) to capture short-term market behavior. These intervals allow us to track tick variations effectively and compute statistical metrics like the standard deviation for our analysis.
 
 
 ## Machine Learning model
 
-Given the need for on-chain deployment, our initial implementation uses a Linear Regression model as a proof of concept due to its simplicity and efficiency.
-To avoid handling floating-point numbers on-chain, we decided to upscale both the input data and the model coefficients to be able to use int256 directly in the smart contract. While this introduces minor approximations, it ensures compatibility with on-chain arithmetic without compromising too much prediction accuracy.
+For on-chain deployment, we implemented a **Linear Regression** model as a proof of concept, chosen for its simplicity and computational efficiency. This model forecasts volatility based on historical price data.
 
-All the detail of the implementation can be found in the `model` folder. 
+To ensure compatibility with on-chain arithmetic, we **avoided floating-point operations by upscaling both the input data and the model coefficients**. These values are converted to integers (int256) for processing directly within the smart contract. While this approach introduces minor approximations, it maintains prediction accuracy while adhering to on-chain computation constraints.
+
+Detailed implementation files are available in the `model` folder
 
 ## Arbitrum Stylus implementation
 
-On the Arbiturm Stylus implementation, we have imported our trained model, and defined it directly in the smart contract. Our stylus smart contract have one function called `forcast_volatility` which, as the name suggest it, will predict the next volatility. Notice that for the first 20 called, the model will not forcast any point, as we need to have at least 20 data history to be able to predict the next one. Thus, for the 20th first call, we are returning the current volatility, and after that, we are forcast the new one.  
+We leverage Arbitrum Stylus to deploy our trained Linear Regression model directly on-chain. Stylus enables efficient and optimized execution of computationally intensive tasks, such as machine learning predictions, within smart contracts.
 
-You can found the implementation of the contract in the `stylus` folder. 
+Our Stylus smart contract includes a function named `forecast_volatility`, which predicts the next volatility value based on historical data. Since at least 20 data points are required for predictions, the model **does not forecast during the first 20 calls**. Instead, it returns the current volatility. After the initial 20 calls, the model begins providing forecasts for the next volatility value.
 
-## Brevis - How to fetch our data
+The full implementation of this contract is located in the `stylus` folder.
 
-As computing our data, can be gas consuming to do it on-chain, we are using Brevis, allowing us to compute it off-chain. For that, we have created a circuit (see `brevis/prover/circuits/circuit.go`) where we are aggregating all the swap events, to extract the tick price, and we are computing the standard deviation from our window period.
 
-Once the circuit built, we also provide a node server, allowing us to fetch the different Swap events, using a RPC server, and allowing us to generate the proof. This implementation can be found in the `brevis/server/api/index.ts` file.
+## Brevis implementation
 
-We also add in our smart contract the callback call for Brevis, which is going to update the volatility parameter.
+To reduce gas costs associated with on-chain data computation, we use Brevis, a tool that allows us to compute the necessary data off-chain. To do this, we created a **Brevis circuit** (located in `brevis/prover/circuits/circuit.go`) that **aggregates swap events and extracts tick price data**. From this data, we compute the standard deviation over our defined window period.
+
+Once the circuit is built, we provide a Node.js server (see `brevis/server/api/index.ts`) that fetches swap events through an RPC server. This server also generates zero-knowledge proofs to ensure trust in the computation and can be used to update the volatility parameter on-chain.
+
+We integrate this functionality into our smart contract by adding a callback to Brevis, allowing the contract to update the volatility value based on the off-chain computation.
+
 
 ## Hook Implementation
 
-Now, in our hook, we are putting together all the different piece. As we are using dynamic fee, we need to check at the initialization, that the hook is intent to be dynamic. Then, we have a callback function for Brevis, allowing to store and update the volatility value. Finally, before each swap, we are checking the current volatility and the forcast one, and decide if we need to update or not the fee dynamically.
+Now, in our hook, we are putting together all the different piece. As we are using dynamic fee, we need to check at the initialization, that the hook is intent to be dynamic. Then, we have a callback function for Brevis, allowing to store and update the volatility value. Finally, before each swap, we are checking the current volatility and the forecast one, and decide if we need to update or not the fee dynamically.
+
+
+In the hook implementation, we integrate all the components necessary for dynamic fee adjustments.
+
+- Initialization: First, we check that the hook is intended to support dynamic fees.
+- Brevis Callback: We add a callback function for Brevis to store and update the volatility value in the smart contract.
+- Dynamic Fee Adjustment: Before each swap, we verify that we are not entering a high volatility period by checking the forecasted volatility. If necessary, we adjust the dynamic fee to mitigate risk and protect liquidity providers.
+This structured approach ensures that the dynamic fee adjustments are based on real-time volatility data, optimizing liquidity provider protection and trading incentives.
+
+
 

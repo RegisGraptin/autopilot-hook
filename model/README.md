@@ -19,7 +19,7 @@ This dataset provides a granular view of price fluctuations, which will serve as
 
 ## Model Design & Implementation
 
-Our approach uses historical price data to predict price volatility. For that, we are reling on the last **20 data points** (15-minute intervals) to capture short-term market behavior.
+Our approach uses historical price data to predict price volatility. For that, we are relying on the last **20 data points** (15-minute intervals) to capture short-term market behavior.
 
 ### Data Transformation:
 
